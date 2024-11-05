@@ -1,0 +1,1732 @@
+#include <stdio.h>
+#include <stdlib.h>
+#include <string.h>
+
+#define INTEGRANTES_COMISION 13 // Número fijo de integrantes para todas las comisiones OJO: LA DE SENADORES ES 5 Y MIXTA 10
+
+// Estructura para representar una etapa del proceso legislativo
+struct Etapa
+{
+    char *nombre;
+    char *descripcion;
+};
+
+// Estructura para representar un parlamentario lista doblemente enlazada
+struct Parlamentario
+{
+    int id;
+    char *nombre;
+    char *partidoPolitico; // Nuevo campo para el partido político
+    char *distrito; // Nuevo campo para el distrito del parlamentario
+    int edad; // Nuevo campo para la edad
+    int cargo; // 1 = diputado , 2 = senador
+
+};
+
+
+struct NodoParlamentario // Doblemente enlazada
+{
+    struct Parlamentario *parlamentario;
+    struct NodoParlamentario *siguiente, *anterior;
+};
+
+// Estructura de la comision con arreglo de punteros a Parlamentario
+struct Comision
+{
+    int id;
+    char *nombre;
+    char *descripcion;
+    struct Parlamentario *integrantes[INTEGRANTES_COMISION]; // Arreglo de punteros a los parlamentarios que componen la comision
+    int numIntegrantes;
+};
+
+// Arrelo para manejar nodos de comisiones
+struct NodoComision
+{
+    struct Comision *comision;
+    struct NodoComision *anterior, *siguiente;
+};
+
+// Estructura para representar una modificación en un proyecto de ley
+struct Modificacion
+{
+    int id;
+    char *descripcion;
+    int aprobado; // 1 si fue aprobado, 0 si fue rechazado
+};
+
+// Manejo dinámico de modificaciones en un proyecto
+struct ModificacionesProyecto
+{
+    struct Modificacion *modificaciones; // Array dinámico de modificaciones
+    int numModificaciones; // Número actual de modificaciones
+    int capacidadModificaciones; // Capacidad máxima actual del array de modificaciones
+};
+
+// Estructura para manejar votaciones
+struct Votacion
+{
+    int idParlamentario;
+    int voto; // 2 para a favor, 1 para en contra, 0 para abstención
+};
+
+// Estructura de ley con campos adicionales para rastrear el proyecto original
+struct Ley
+{
+    int id; // ID de la ley
+    int idProyectoOriginal; // ID del proyecto de ley antes de ser aprobada
+    char *titulo;
+    char *fechaPromulgacion;
+    int altura; // Usado en la estructura del árbol AVL
+};
+
+// Nodo del árbol binario de búsqueda para leyes
+struct NodoLey
+{
+    struct Ley *ley;
+    struct NodoLey *izquierda, *derecha;
+};
+
+// Estructura para representar a un ciudadano lista circular doblemente enlazada
+struct Ciudadano
+{
+    char *nombre;
+    char *rut;
+    struct Ciudadano *siguiente, *anterior; // Lista circular de ciudadanos
+};
+
+struct IniciativaCiudadana
+{
+    int idProyecto;
+    char *titulo; // Campo 'titulo'
+    char *descripcion; // Campo 'descripcion'
+    struct Ciudadano *ciudadanos;
+    int numFirmas;
+    struct IniciativaCiudadana *siguiente;
+};
+
+struct NodoIniciativa
+{
+    struct IniciativaCiudadana iniciativa; // La iniciativa
+    char titulo[100];      // Titulo de la iniciativa
+    char descripcion[200]; // Descripcion de la iniciativa
+    struct NodoIniciativa *siguiente; // Apunta al siguiente nodo de la lista
+};
+
+// Estructura de proyecto (arreglos y listas dinámicas)
+struct Proyecto
+{
+    int id;
+    char *titulo;
+    struct Etapa *etapas; // Array dinámico de etapas
+    int capacidadEtapas;
+    int numEtapas;
+    struct Comision *comisiones; // Lista dinámica de comisiones
+    struct ModificacionesProyecto *modificaciones; // Información de modificaciones
+    struct IniciativaCiudadana *apoyoCiudadano; // Apoyo ciudadano al proyecto
+    int urgencia;  // 3 = Baja, 2 = Media, 1 = Alta
+    struct Votacion **votos; // Arreglo de punteros a votaciones indicado por el profe
+    int numVotos; // Cantidad de votos registrados
+    int capacidadVotos; // capacidad actual para votos
+    int veto; // 1 = Vetado , 2 = No vetado.
+    int origen; // 1 = Presidencial,  2 = Diputados, 3 = Senadores, 4 = IniciativaCiudadana
+};
+
+// Lista enlazada para manejar los proyectos
+struct NodoProyecto
+{
+    struct Proyecto *proyecto;
+    struct NodoProyecto *siguiente;
+};
+
+// Estructura de cámara con nombre y lista doblemente enlazada de parlamentarios
+struct Camara
+{
+    char *nombre;
+    struct NodoParlamentario *parlamentarios; // Lista Doblemente Enlazada de parlamentarios
+};
+
+struct SistemaLegislativo
+{
+    struct NodoProyecto *proyectos; // Lista enlazada de proyectos
+    struct NodoComision *comisiones; // Lista doblemente enlazada de parlamentarios
+    struct NodoLey *leyes; // Árbol AVL de leyes
+    struct Camara *camaras; // Array de cámaras legislativas
+    struct NodoParlamentario *parlamentario;
+    struct IniciativaCiudadana *iniciativas;
+};
+
+struct SistemaLegislativo sistemaGlobal;
+
+void inicializarSistema()
+{
+    sistemaGlobal.proyectos = NULL;
+    sistemaGlobal.comisiones = NULL;
+    sistemaGlobal.parlamentario = NULL;
+    sistemaGlobal.leyes = NULL;
+    sistemaGlobal.camaras =NULL;
+}
+
+// Función para crear un nuevo parlamentario
+struct Parlamentario *crearParlamentario(int id, char *nombre, char *partidoPolitico, char *distrito, int edad, int cargo)
+{
+    struct Parlamentario *nuevo = (struct Parlamentario *)malloc(sizeof(struct Parlamentario));
+    nuevo->id = id;
+
+    nuevo->nombre = (char *)malloc(strlen(nombre) + 1);
+    strcpy(nuevo->nombre, nombre);
+
+    nuevo->partidoPolitico = (char *)malloc(strlen(partidoPolitico) + 1);
+    strcpy(nuevo->partidoPolitico, partidoPolitico);
+
+    nuevo->distrito = (char *)malloc(strlen(distrito) + 1 );
+    strcpy(nuevo->distrito, distrito);
+
+    nuevo->edad = edad;
+
+    nuevo->cargo = cargo;
+
+    return nuevo;
+}
+
+// Función para agregar un nuevo parlamentario a la lista global
+void agregarNodoParlamentario(struct Parlamentario *nuevoParlamentario)
+{
+    struct NodoParlamentario *nuevoNodo = (struct NodoParlamentario *)malloc(sizeof(struct NodoParlamentario));
+    nuevoNodo->parlamentario = nuevoParlamentario;
+    nuevoNodo->siguiente = sistemaGlobal.parlamentario;
+    sistemaGlobal.parlamentario = nuevoNodo;
+}
+
+// Función para buscar un parlamentario por ID
+
+
+// Función para modificar un parlamentario
+void modificarParlamentario(struct Parlamentario *parlamentario, char *nuevoNombre, char *nuevoPartido, char *nuevoDistrito, int nuevaEdad, int nuevoCargo)
+{
+    strcpy(parlamentario->nombre, nuevoNombre);
+    strcpy(parlamentario->partidoPolitico, nuevoPartido);
+    strcpy(parlamentario->distrito, nuevoDistrito);
+    parlamentario->edad = nuevaEdad;
+    parlamentario->cargo = nuevoCargo;
+    printf("Parlamentario modificado correctamente.\n");
+}
+
+
+
+void listarParlamentarios(struct NodoParlamentario *head)
+{
+    struct NodoParlamentario *actual = head;
+    printf("\n--- Lista de Parlamentarios ---\n");
+    while (actual != NULL)
+    {
+        printf("ID: %d\nNombre: %s\nPartido: %s\nDistrito: %s\nEdad: %d\nCargo: %s\n\n",
+               actual->parlamentario->id,
+               actual->parlamentario->nombre,
+               actual->parlamentario->partidoPolitico,
+               actual->parlamentario->distrito,
+               actual->parlamentario->edad,
+               actual->parlamentario->cargo == 1 ? "Diputado" : (actual->parlamentario->cargo == 2 ? "Senador" : "Desconocido"));
+
+        actual = actual->siguiente;
+    }
+}
+
+
+struct NodoParlamentario *eliminarNodoParlamentario(struct NodoParlamentario *head, int id)
+{
+    struct NodoParlamentario *actual = head;
+    struct NodoParlamentario *anterior = NULL;
+
+    while (actual != NULL)
+    {
+        if (actual->parlamentario->id == id)
+        {
+            if (anterior == NULL)
+            {
+                head = actual->siguiente;
+            }
+            else
+            {
+                anterior->siguiente = actual->siguiente;
+            }
+            free(actual->parlamentario);
+            free(actual);
+            printf("Parlamentario con ID %d eliminado.\n", id);
+            return head;
+        }
+        anterior = actual;
+        actual = actual->siguiente;
+    }
+    printf("Parlamentario con ID %d no encontrado.\n", id);
+    return head;
+}
+
+// Función para crear una nueva comision
+struct Comision *crearComision(int id, char *nombre, char *descripcion)
+{
+    int i;
+    struct Comision *nuevaComision;
+
+    nuevaComision = (struct Comision *)malloc(sizeof(struct Comision));
+    nuevaComision->id = id;
+
+    nuevaComision->nombre = (char *)malloc(strlen(nombre) + 1);
+    strcpy(nuevaComision->nombre, nombre);
+
+    nuevaComision->descripcion = (char *)malloc(strlen(descripcion) + 1);
+    strcpy(nuevaComision->descripcion, descripcion);
+
+    for (i = 0; i < INTEGRANTES_COMISION; i++)
+    {
+        nuevaComision->integrantes[i] = NULL;
+    }
+
+    return nuevaComision;
+}
+
+
+void agregarNodoComision(struct Comision *nuevaComision)
+{
+    struct NodoComision *nuevoNodo = (struct NodoComision *)malloc(sizeof(struct NodoComision));
+    nuevoNodo->comision = nuevaComision;
+    nuevoNodo->siguiente = sistemaGlobal.comisiones;
+    sistemaGlobal.comisiones = nuevoNodo;
+}
+
+// Función para buscar una comision por ID
+struct Comision *buscarComisionPorID(struct NodoComision *head, int id)
+{
+    struct NodoComision *actual = head;
+    while (actual != NULL)
+    {
+        if (actual->comision->id == id)
+        {
+            return actual->comision;
+        }
+        actual = actual->siguiente;
+    }
+    return NULL;
+}
+
+// Función para modificar una comision
+void modificarComision(struct Comision *comision, char *nuevoNombre, char *nuevaDescripcion)
+{
+    strcpy(comision->nombre, nuevoNombre);
+    strcpy(comision->descripcion, nuevaDescripcion);
+    printf("comision modificada correctamente.\n");
+}
+
+
+// Función para listar todas las comisiones
+void listarComisiones(struct NodoComision *head)
+{
+    struct NodoComision *actual = head;
+    printf("\n--- Lista de Comisiones ---\n");
+    while (actual != NULL)
+    {
+        printf("ID: %d\nNombre: %s\nDescripcion: %s\n\n",
+               actual->comision->id,
+               actual->comision->nombre,
+               actual->comision->descripcion);
+        actual = actual->siguiente;
+    }
+}
+
+// Función para eliminar un nodo de comision por ID
+struct NodoComision *eliminarNodoComision(struct NodoComision *head, int id)
+{
+    struct NodoComision *actual = head;
+    struct NodoComision *anterior = NULL;
+
+    while (actual != NULL)
+    {
+        if (actual->comision->id == id)
+        {
+            if (anterior == NULL)
+            {
+                head = actual->siguiente;
+            }
+            else
+            {
+                anterior->siguiente = actual->siguiente;
+            }
+            free(actual->comision);
+            free(actual);
+            printf("comision con ID %d eliminada.\n", id);
+            return head;
+        }
+        anterior = actual;
+        actual = actual->siguiente;
+    }
+    printf("comision con ID %d no encontrada.\n", id);
+    return head;
+}
+
+void agregarEtapa(struct Proyecto *proyecto, char *nombreEtapa, char *descripcionEtapa)
+{
+    int i, nuevaCapacidad;
+    struct Etapa *nuevasEtapas = NULL;
+
+    if (proyecto->numEtapas >= proyecto->capacidadEtapas)
+    {
+        nuevaCapacidad = (proyecto->capacidadEtapas > 0) ? proyecto->capacidadEtapas * 2 : 2;
+        nuevasEtapas = (struct Etapa *)malloc(nuevaCapacidad * sizeof(struct Etapa));
+
+        if (nuevasEtapas == NULL) return;
+
+        for (i = 0; i < proyecto->numEtapas; i++)
+        {
+            nuevasEtapas[i] = proyecto->etapas[i];
+        }
+
+        free(proyecto->etapas);
+        proyecto->etapas = nuevasEtapas;
+        proyecto->capacidadEtapas = nuevaCapacidad;
+    }
+
+    proyecto->etapas[proyecto->numEtapas].nombre = strdup(nombreEtapa);
+    proyecto->etapas[proyecto->numEtapas].descripcion = strdup(descripcionEtapa);
+    proyecto->numEtapas++;
+}
+
+
+struct Proyecto* crearProyecto(int id, char *titulo, int urgencia, int origen)
+{
+    struct Proyecto *nuevoProyecto = (struct Proyecto *)malloc(sizeof(struct Proyecto));
+
+    // Inicializar el array de etapas
+    nuevoProyecto->etapas = (struct Etapa *)malloc(nuevoProyecto->capacidadEtapas * sizeof(struct Etapa));
+    nuevoProyecto->numEtapas = 0;
+    nuevoProyecto->capacidadEtapas = 2;
+
+    nuevoProyecto->id = id;
+    nuevoProyecto->titulo = (char *)malloc(strlen(titulo) + 1);
+    strcpy(nuevoProyecto->titulo, titulo);
+    nuevoProyecto->urgencia = urgencia;
+    nuevoProyecto->veto = 2; // Inicialmente no vetado
+    nuevoProyecto->origen = origen; // Asignar el origen
+
+    // Inicializar campos de modificaciones y votaciones
+    nuevoProyecto->modificaciones = (struct ModificacionesProyecto *)malloc(sizeof(struct ModificacionesProyecto));
+    nuevoProyecto->modificaciones->numModificaciones = 0;
+    nuevoProyecto->modificaciones->capacidadModificaciones = 2;
+    nuevoProyecto->modificaciones->modificaciones = (struct Modificacion *)malloc(nuevoProyecto->modificaciones->capacidadModificaciones * sizeof(struct Modificacion));
+
+    nuevoProyecto->numVotos = 0;
+    nuevoProyecto->capacidadVotos = 2;
+    nuevoProyecto->votos = (struct Votacion **)malloc(nuevoProyecto->capacidadVotos * sizeof(struct Votacion*));
+
+    // Agregar una etapa inicial "Inicio" al proyecto
+    agregarEtapa(nuevoProyecto, "Inicio", "Proyecto iniciado.");
+
+    return nuevoProyecto;
+}
+
+int leyCreada = 0; // Variable global
+
+void agregarNodoProyecto(struct Proyecto *nuevoProyecto)
+{
+    struct NodoProyecto *nuevoNodo = (struct NodoProyecto *)malloc(sizeof(struct NodoProyecto));
+    nuevoNodo->proyecto = nuevoProyecto;
+    nuevoNodo->siguiente = sistemaGlobal.proyectos;
+    sistemaGlobal.proyectos = nuevoNodo;
+
+    // Reiniciar la variable estática leyCreada
+    leyCreada = 0;
+}
+
+
+void modificarProyecto(struct Proyecto *proyecto, int idModificacion, char *descripcion, int aprobado)
+{
+
+    int i, nuevaCapacidad;
+    struct Modificacion *nuevoArray;
+    struct Modificacion *nuevaModificacion = &proyecto->modificaciones->modificaciones[proyecto->modificaciones->numModificaciones++];
+
+    if (proyecto->modificaciones->numModificaciones >= proyecto->modificaciones->capacidadModificaciones)
+    {
+        nuevaCapacidad = (proyecto->modificaciones->capacidadModificaciones > 0) ? proyecto->modificaciones->capacidadModificaciones * 2 : 2;
+
+        nuevoArray = (struct Modificacion *)malloc(nuevaCapacidad * sizeof(struct Modificacion));
+        if (nuevoArray == NULL) return;
+
+        for (i = 0; i < proyecto->modificaciones->numModificaciones; i++)
+        {
+            nuevoArray[i] = proyecto->modificaciones->modificaciones[i];
+        }
+
+
+        free(proyecto->modificaciones->modificaciones);
+        proyecto->modificaciones->modificaciones = nuevoArray;
+        proyecto->modificaciones->capacidadModificaciones = nuevaCapacidad;
+    }
+
+
+    nuevaModificacion->id = idModificacion;
+    nuevaModificacion->descripcion = (char *)malloc(strlen(descripcion) + 1);
+
+    if (nuevaModificacion->descripcion == NULL)
+    {
+        return;
+    }
+
+    strcpy(nuevaModificacion->descripcion, descripcion);
+    nuevaModificacion->aprobado = aprobado;
+}
+
+
+void contarVotos(struct Proyecto *proyecto, int *favor, int *contra, int *abstenciones)
+{
+    int i;
+    *favor = *contra = *abstenciones = 0;
+
+    for(i = 0; i < proyecto->numVotos; i++)
+    {
+        if(proyecto->votos[i]->voto == 2)
+            (*favor)++;
+
+        if(proyecto->votos[i]->voto == 1)
+            (*contra)++;
+
+        else
+            (*abstenciones)++;
+    }
+}
+
+
+
+struct NodoLey *agregarLey(struct NodoLey *nodo, struct Ley *ley)
+{
+    struct NodoLey *nuevoNodo = NULL;
+
+    if(nodo == NULL)
+    {
+        nuevoNodo = (struct NodoLey *)malloc(sizeof(struct NodoLey));
+        nuevoNodo->ley = ley;
+        nuevoNodo->izquierda = NULL;
+        nuevoNodo->derecha = NULL;
+
+        return nuevoNodo;
+    }
+
+    if(ley->id < nodo->ley->id)
+    {
+        nodo->izquierda = agregarLey(nodo->izquierda, ley);
+    }
+    else
+    {
+        nodo->derecha = agregarLey(nodo->derecha, ley);
+    }
+    return nodo;
+}
+
+struct Ley *buscarLey(struct NodoLey *nodo, int idBuscada)
+{
+    while(nodo != NULL)
+    {
+        if (nodo->ley->id == idBuscada)
+            return nodo->ley;
+
+        if (idBuscada < nodo->ley->id)
+            nodo = nodo->izquierda;
+
+        else
+            nodo = nodo->derecha;
+    }
+    return NULL;
+}
+
+int leerEntero()
+{
+    int valor;
+    while (1)
+    {
+        if(scanf("%d", &valor) == 1)
+        {
+            while(getchar() != '\n'); // Limpia el buffer de entrada
+            break;
+        }
+        else
+        {
+            printf("Entrada no valida. Debe ser un numero entero.\n");
+            while(getchar() != '\n');
+        }
+    }
+    return valor;
+}
+
+void leerString(char *caracter, int largo)
+{
+    while(1)
+    {
+        if(fgets(caracter, largo, stdin) != NULL)
+        {
+            size_t len = strlen(caracter);
+            if(len > 0 && caracter[len - 1] == '\n')
+            {
+                caracter[len - 1] = '\0'; // Elimina el salto de linea al final
+            }
+            if (len > 1) break; // Se asegura de que no sea una entrada vacia
+            else printf("Entrada vacia. Intente de nuevo: ");
+        }
+    }
+}
+
+// Función para trasladar un proyecto entre cámaras, incluyendo verificación de votación
+void trasladarEntreCamaras(struct Proyecto *proyecto)
+{
+    int favor = 0, contra = 0, abstenciones = 0;
+    struct Etapa *etapaActual = NULL;
+
+    contarVotos(proyecto, &favor, &contra, &abstenciones);
+
+    etapaActual = &proyecto->etapas[proyecto->numEtapas - 1];
+
+    if (favor > contra)
+    {
+        if (strcmp(etapaActual->nombre, "Inicio") == 0)
+        {
+            agregarEtapa(proyecto, "Camara de Origen", "Proyecto aprobado en Camara de Origen y enviado a la Camara Revisora.");
+            printf("El proyecto '%s' fue aprobado en la Camara de Origen y sera enviado a la Camara Revisora.\n", proyecto->titulo);
+        }
+        else if (strcmp(etapaActual->nombre, "Camara de Origen") == 0)
+        {
+            agregarEtapa(proyecto, "Camara Revisora", "Proyecto aprobado en Camara Revisora y enviado a la revision presidencial.");
+            printf("El proyecto '%s' fue aprobado en la Camara Revisora y pasara a la etapa de revision presidencial.\n", proyecto->titulo);
+        }
+        else if (strcmp(etapaActual->nombre, "Camara Revisora") == 0)
+        {
+            agregarEtapa(proyecto, "Revision Presidencial", "El proyecto ha pasado a revision presidencial.");
+            printf("El proyecto '%s' ha pasado a revision presidencial.\n", proyecto->titulo);
+        }
+        else if (strcmp(etapaActual->nombre, "Revision Presidencial") == 0)
+        {
+            agregarEtapa(proyecto, "Publicado", "El proyecto ha sido aprobado por el presidente y publicado.");
+            printf("El proyecto '%s' ha sido aprobado por el presidente y publicado.\n", proyecto->titulo);
+        }
+    }
+    else
+    {
+        agregarEtapa(proyecto, "Rechazado", "Proyecto rechazado y no avanzara en el proceso legislativo.");
+        printf("El proyecto '%s' fue rechazado y no avanzara en el proceso legislativo.\n", proyecto->titulo);
+    }
+}
+
+
+struct Ley* crearLeyDesdeProyecto(struct Proyecto* proyecto, int idLey, const char* fechaPromulgacion)
+{
+    struct Ley *nuevaLey = (struct Ley *)malloc(sizeof(struct Ley));
+
+    nuevaLey->id = idLey;  // Asigna un nuevo ID a la ley
+    nuevaLey->idProyectoOriginal = proyecto->id;
+    nuevaLey->titulo = (char *)malloc(strlen(proyecto->titulo) + 1);
+    strcpy(nuevaLey->titulo, proyecto->titulo);
+    nuevaLey->fechaPromulgacion = (char *)malloc(strlen(fechaPromulgacion) + 1);
+    strcpy(nuevaLey->fechaPromulgacion, fechaPromulgacion);
+    nuevaLey->altura = 1;  // Asignación inicial de altura para el AVL
+
+    return nuevaLey;
+}
+
+
+void listarProyectos(struct NodoProyecto *head)
+{
+    struct NodoProyecto *actual = head;
+    printf("\n--- Lista de Proyectos ---\n");
+
+    while (actual != NULL)
+    {
+        printf("ID: %d\n", actual->proyecto->id);
+        printf("Titulo: %s\n", actual->proyecto->titulo);
+
+        // Mostrar el nivel de urgencia como texto
+        printf("Urgencia: %s\n",
+               actual->proyecto->urgencia == 3 ? "Baja" :
+               actual->proyecto->urgencia == 2 ? "Media" :
+               actual->proyecto->urgencia == 1 ? "Alta" : "No especificada");
+
+        // Mostrar el origen como texto
+        printf("Origen: %s\n",
+               actual->proyecto->origen == 1 ? "Presidencial" :
+               actual->proyecto->origen == 2 ? "Diputados" :
+               actual->proyecto->origen == 3 ? "Senadores" : "No especificado");
+
+        printf("\n");
+        actual = actual->siguiente;
+    }
+}
+
+
+struct NodoProyecto *eliminarNodoProyecto(struct NodoProyecto *head, int id)
+{
+    struct NodoProyecto *actual = head;
+    struct NodoProyecto *anterior = NULL;
+
+    while (actual != NULL)
+    {
+        if (actual->proyecto->id == id)
+        {
+            if (anterior == NULL)
+            {
+                head = actual->siguiente;
+            }
+            else
+            {
+                anterior->siguiente = actual->siguiente;
+            }
+
+            free(actual->proyecto);
+            free(actual);
+
+            printf("Proyecto con ID %d eliminado.\n", id);
+            return head;
+        }
+        anterior = actual;
+        actual = actual->siguiente;
+    }
+    printf("Proyecto con ID %d no encontrado.\n", id);
+    return head;
+}
+
+void mostrarOrigenProyecto(struct Proyecto *proyecto)
+{
+    printf("Origen del proyecto '%s': ", proyecto->titulo);
+
+    switch (proyecto->origen)
+    {
+        case 1:
+            printf("Presidencial\n");
+            break;
+        case 2:
+            printf("Diputados\n");
+            break;
+        case 3:
+            printf("Senadores\n");
+            break;
+        case 4:
+            printf("Iniciativa ciudadana\n");
+            break;
+        default:
+            printf("Desconocido\n");
+    }
+}
+
+int verificarIniciativa(struct Proyecto *proyecto)
+{
+    if (proyecto->origen == 4 && proyecto->apoyoCiudadano->numFirmas < 309007)
+    {
+        printf("La iniciativa ciudadana no cumple con el requisito de firmas.\n");
+        return 0;
+    }
+
+    printf("Iniciativa valida. Origen: ");
+    mostrarOrigenProyecto(proyecto);
+
+    return 1;
+}
+
+
+void crearIniciativaCiudadana(struct NodoIniciativa **inicio, int idProyecto)
+{
+    struct NodoIniciativa *nuevaIniciativa = malloc(sizeof(struct NodoIniciativa));
+    nuevaIniciativa->iniciativa.idProyecto = idProyecto;
+    nuevaIniciativa->iniciativa.numFirmas = 0;
+    nuevaIniciativa->iniciativa.ciudadanos = NULL;
+
+    printf("\n--- Crear Iniciativa Ciudadana ---\n");
+    printf("Ingrese el titulo de la iniciativa: ");
+    leerString(nuevaIniciativa->titulo, sizeof(nuevaIniciativa->titulo));
+    printf("Ingrese una descripcion breve: ");
+    leerString(nuevaIniciativa->descripcion, sizeof(nuevaIniciativa->descripcion));
+
+    // Añadir al inicio de la lista
+    nuevaIniciativa->siguiente = *inicio;
+    *inicio = nuevaIniciativa;
+
+    printf("Iniciativa '%s' creada con exito.\n", nuevaIniciativa->titulo);
+}
+
+
+int generarIdUnicoIniciativa()
+{
+    static int contadorID = 1;
+    return contadorID++;
+}
+
+struct NodoIniciativa* buscarIniciativaPorID(struct NodoIniciativa *inicio, int idProyecto)
+{
+    struct NodoIniciativa *actual = inicio;
+    while (actual != NULL)
+    {
+        if (actual->iniciativa.idProyecto == idProyecto)
+        {
+            return actual;
+        }
+        actual = actual->siguiente;
+    }
+    return NULL;
+}
+
+void verificarYConvertirIniciativas(struct NodoIniciativa *inicio, int votosNecesarios)
+{
+    struct Proyecto *nuevoProyecto = NULL;
+    struct NodoIniciativa *actual = inicio;
+    while (actual != NULL)
+    {
+        if (actual->iniciativa.numFirmas >= votosNecesarios)
+        {
+            printf("La iniciativa '%s' cumple con los votos y sera convertida en Proyecto de Ley.\n", actual->titulo);
+
+            nuevoProyecto = crearProyecto(actual->iniciativa.idProyecto, actual->titulo, 1, 2);
+            agregarNodoProyecto(nuevoProyecto);
+            printf("Proyecto de Ley '%s' creado con origen 'Iniciativa ciudadana'.\n", nuevoProyecto->titulo);
+        }
+        else
+        {
+            printf("La iniciativa '%s' aun no cumple con los votos necesarios (%d/%d).\n", actual->titulo, actual->iniciativa.numFirmas, votosNecesarios);
+        }
+        actual = actual->siguiente;
+    }
+}
+
+void firmarIniciativa(struct NodoIniciativa *inicio, int idProyecto, char *nombre, char *rut)
+{
+    struct Ciudadano *nuevoCiudadano = NULL;
+    struct Ciudadano *ultimo = NULL;
+
+    struct NodoIniciativa *nodo = buscarIniciativaPorID(inicio, idProyecto);
+    if (nodo == NULL)
+    {
+        printf("Iniciativa no encontrada.\n");
+        return;
+    }
+
+    nuevoCiudadano = malloc(sizeof(struct Ciudadano));
+    nuevoCiudadano->nombre = strdup(nombre);
+    nuevoCiudadano->rut = strdup(rut);
+
+    // Agregar el ciudadano a la lista circular
+    if (nodo->iniciativa.ciudadanos == NULL)
+    {
+        nodo->iniciativa.ciudadanos = nuevoCiudadano;
+        nuevoCiudadano->siguiente = nuevoCiudadano;
+        nuevoCiudadano->anterior = nuevoCiudadano;
+    }
+    else
+    {
+        ultimo = nodo->iniciativa.ciudadanos->anterior;
+        ultimo->siguiente = nuevoCiudadano;
+        nuevoCiudadano->anterior = ultimo;
+        nuevoCiudadano->siguiente = nodo->iniciativa.ciudadanos;
+        nodo->iniciativa.ciudadanos->anterior = nuevoCiudadano;
+    }
+
+    nodo->iniciativa.numFirmas++;
+    printf("Ciudadano %s (RUT: %s) ha firmado la iniciativa '%s'.\n", nombre, rut, nodo->titulo);
+}
+
+struct Parlamentario *buscarParlamentarioPorID(struct NodoParlamentario *head, int id)
+{
+    struct NodoParlamentario *actual = head;
+    while (actual != NULL)
+    {
+        if (actual->parlamentario->id == id)
+        {
+            return actual->parlamentario;
+        }
+        actual = actual->siguiente;
+    }
+    return NULL;
+}
+
+void agregarParlamentarioAComision(struct Comision *comision, struct Parlamentario *parlamentario)
+{
+    if (comision->numIntegrantes < INTEGRANTES_COMISION)
+    {
+        comision->integrantes[comision->numIntegrantes] = parlamentario;
+        comision->numIntegrantes++;
+        printf("Parlamentario '%s' agregado a la comision '%s'.\n", parlamentario->nombre, comision->nombre);
+    }
+    else
+    {
+        printf("No se puede agregar mas parlamentarios a la comision, cupo completo.\n");
+    }
+}
+
+struct Proyecto *buscarProyectoPorID(struct NodoProyecto *head, int id)
+{
+    struct NodoProyecto *actual = head;
+    while (actual != NULL)
+    {
+        if (actual->proyecto->id == id)
+        {
+            printf("ID: %d\n", actual->proyecto->id);
+            printf("Titulo: %s\n", actual->proyecto->titulo);
+
+            printf("Urgencia: %s\n",
+                   actual->proyecto->urgencia == 3 ? "Baja" :
+                   actual->proyecto->urgencia == 2 ? "Media" :
+                   actual->proyecto->urgencia == 1 ? "Alta" : "No especificada");
+
+            printf("Origen: %s\n",
+                   actual->proyecto->origen == 1 ? "Presidencial" :
+                   actual->proyecto->origen == 2 ? "Diputados" :
+                   actual->proyecto->origen == 3 ? "Senadores" : "No especificado");
+
+            printf("\n");
+
+            return actual->proyecto;
+        }
+        actual = actual->siguiente;
+    }
+    return NULL;
+}
+
+void votarProyecto(struct Proyecto *proyecto, struct NodoParlamentario *listaParlamentarios, int idParlamentario, int voto)
+{
+    int i, nuevaCapacidad;
+    struct Votacion **nuevosVotos = NULL;
+
+    // Verificar si la etapa actual es "Revisión Presidencial"
+    if (proyecto->numEtapas > 0 && strcmp(proyecto->etapas[proyecto->numEtapas - 1].nombre, "Revision Presidencial") == 0) //No encontramos otra forma de verificarlo
+    {
+
+    }
+    else
+    {
+        if (buscarParlamentarioPorID(listaParlamentarios, idParlamentario) == NULL)
+        {
+            printf("El parlamentario con ID %d no existe.\n", idParlamentario);
+            return;
+        }
+
+        // Verificar si el parlamentario ya ha votado en este proyecto
+        for (i = 0; i < proyecto->numVotos; i++)
+        {
+            if (proyecto->votos[i]->idParlamentario == idParlamentario)
+            {
+                printf("El parlamentario con ID %d ya ha votado en este proyecto.\n", idParlamentario);
+                return; // Sale de la función si el parlamentario ya votó
+            }
+        }
+    }
+
+    if (proyecto->numVotos >= proyecto->capacidadVotos)
+    {
+        nuevaCapacidad = (proyecto->capacidadVotos > 0) ? proyecto->capacidadVotos * 2 : 2;
+
+        // Asignar memoria al arreglo de votos
+        nuevosVotos =(struct Votacion **) malloc(nuevaCapacidad * sizeof(struct Votacion *));
+
+        if (nuevosVotos == NULL)
+            return;
+
+        // Copiar los votos existentes al nuevo arreglo
+        for (i = 0; i < proyecto->numVotos; i++)
+        {
+            nuevosVotos[i] = proyecto->votos[i];
+        }
+
+        // Liberar  memoria anterior
+        free(proyecto->votos);
+
+        // Actualizar el puntero al nuevo arreglo
+        proyecto->votos = nuevosVotos;
+        proyecto->capacidadVotos = nuevaCapacidad;
+    }
+
+    proyecto->votos[proyecto->numVotos] = (struct Votacion *)malloc(sizeof(struct Votacion));
+    if (proyecto->votos[proyecto->numVotos] == NULL) return;
+
+    // Asignar idParlamentario solo si no es la etapa de "Revisión Presidencial"
+    if (!(proyecto->numEtapas > 0 && strcmp(proyecto->etapas[proyecto->numEtapas - 1].nombre, "Revision Presidencial") == 0))
+    {
+        proyecto->votos[proyecto->numVotos]->idParlamentario = idParlamentario;
+    }
+
+    proyecto->votos[proyecto->numVotos]->voto = voto;
+    proyecto->numVotos++;
+}
+
+int generarIdUnicoLey(struct SistemaLegislativo *sistema)
+{
+
+    int nuevoId = 1; // ID inicial
+    struct NodoLey *actual = sistema->leyes;
+    while (actual != NULL)
+    {
+        if (actual->ley->id == nuevoId)
+        {
+            nuevoId++; // Incrementar el ID si ya existe
+            actual = sistema->leyes; // Reiniciar la búsqueda desde la raíz
+        }
+        else
+        {
+            actual = (nuevoId < actual->ley->id) ? actual->izquierda : actual->derecha;
+        }
+    }
+
+    return nuevoId;
+}
+
+void contarVotosUnicos(struct Proyecto *proyecto, int *favor, int *contra, int *abstenciones)
+{
+    int i, j, idActual, yaVoto;
+    int numVotantes = 0;
+    int *idVotantes = (int *)malloc(proyecto->numVotos * sizeof(int));
+    *favor = *contra = *abstenciones = 0;
+
+    for (i = 0; i < proyecto->numVotos; i++)
+    {
+        idActual = proyecto->votos[i]->idParlamentario;
+        yaVoto = 0;
+
+        // Verificar si el ID ya ha votado
+        for (j = 0; j < numVotantes; j++)
+        {
+            if (idVotantes[j] == idActual)
+            {
+                yaVoto = 1;
+                break;
+            }
+        }
+
+        if (!yaVoto)// Si el ID no ha votado, contar su voto y agregarlo al arreglo de votantes
+        {
+            if (proyecto->votos[i]->voto == 2)
+                (*favor)++;
+            else if (proyecto->votos[i]->voto == 1)
+                (*contra)++;
+            else
+                (*abstenciones)++;
+
+            idVotantes[numVotantes++] = idActual;
+        }
+    }
+}
+
+int haVotado(struct Proyecto *proyecto, int idParlamentario)
+{
+    int i;
+
+    for (i = 0; i < proyecto->numVotos; i++)
+    {
+        if (proyecto->votos[i]->idParlamentario == idParlamentario)
+        {
+            return 1; // El parlamentario ya ha votado
+        }
+    }
+    return 0; // El parlamentario no ha votado
+}
+
+void verificarQuorum(struct Proyecto *proyecto)
+{
+    int favor, contra, abstenciones, votoPresidente, nuevoId;
+    struct Ley *nuevaLey = NULL;
+
+    contarVotosUnicos(proyecto, &favor, &contra, &abstenciones);
+
+
+    if (proyecto->numEtapas > 0 && strcmp(proyecto->etapas[proyecto->numEtapas - 1].nombre, "Revision Presidencial") == 0)
+    {
+        if (leyCreada)
+        {
+            printf("Ya se ha creado una ley para este proyecto. No se puede crear otra ley.\n");
+            return;
+        }
+
+
+        printf("Votacion del presidente. ");
+        printf("Ingrese el voto del presidente (2: A Favor, 1: En Contra): ");
+        scanf("%d", &votoPresidente);
+
+        if (votoPresidente == 2)
+        {
+
+            printf("\nEl proyecto se ha convertido en ley!\n");
+
+            nuevoId = generarIdUnicoLey(&sistemaGlobal);
+            nuevaLey = crearLeyDesdeProyecto(proyecto, nuevoId, "FechaActual");
+            sistemaGlobal.leyes = agregarLey(sistemaGlobal.leyes, nuevaLey);
+            printf("Ley agregada al arbol correctamente.\n");
+            leyCreada = 1;
+        }
+        else
+        {
+            printf("\nEl proyecto ha sido vetado por el presidente.\n");
+        }
+    }
+    else
+    {
+        if (favor >= (proyecto->origen == 2 ? 78 : 26))
+        {
+            printf("\nQuorum alcanzado. ");
+            trasladarEntreCamaras(proyecto);
+
+
+            if (proyecto->numEtapas > 0 && strcmp(proyecto->etapas[proyecto->numEtapas - 1].nombre, "Publicado") == 0) {
+                if (leyCreada)
+                {
+                    printf("Ya se ha creado una ley para este proyecto. No se puede crear otra ley.\n");
+                    return;
+                }
+
+                printf("\nEl proyecto se ha convertido en ley!\n");
+
+                nuevoId = generarIdUnicoLey(&sistemaGlobal);
+                nuevaLey = crearLeyDesdeProyecto(proyecto, nuevoId, "FechaActual");
+                sistemaGlobal.leyes = agregarLey(sistemaGlobal.leyes, nuevaLey);
+                printf("Ley agregada al arbol correctamente.\n");
+                leyCreada = 1;
+            }
+            else
+            {
+                printf("El proyecto avanza a la siguiente etapa.\n");
+            }
+        }
+        else
+        {
+            printf("Quorum no alcanzado. Se necesitan mas votos.\n");
+        }
+    }
+}
+
+
+void mostrarLeyesAprobadas(struct NodoLey *nodo)
+{
+
+    if (nodo == NULL)
+    {
+        printf("No hay leyes aprobadas.\n");
+        return;
+    }
+
+    if (nodo->izquierda != NULL)
+    {
+        mostrarLeyesAprobadas(nodo->izquierda);
+    }
+
+    // Mostrar la información de la ley actual
+    printf("Ley ID: %d\n", nodo->ley->id);
+    printf("Proyecto Original ID: %d\n", nodo->ley->idProyectoOriginal);
+    printf("Titulo: %s\n", nodo->ley->titulo);
+    printf("Fecha de Promulgacion: %s\n", nodo->ley->fechaPromulgacion);
+    printf("\n");
+
+    if (nodo->derecha != NULL)
+    {
+        mostrarLeyesAprobadas(nodo->derecha);
+    }
+}
+
+
+void menuParlamentarios()
+{
+    int opcion;
+    int idParlamentario, nuevaEdad, nuevoCargo,id, edad, cargo;
+    char nuevoNombre[100], nuevoPartido[50], nuevoDistrito[50], nombre[100], partidoPolitico[50], distrito[50];
+    struct Parlamentario *parlamentario;
+    struct Parlamentario *nuevoParlamentario;
+
+    do
+    {
+        printf("\n--- Menu Parlamentarios ---\n");
+        printf("1. Crear nuevo parlamentario\n");
+        printf("2. Listar todos los parlamentarios\n");
+        printf("3. Eliminar parlamentario\n");
+        printf("4. Buscar parlamentario por ID\n");
+        printf("5. Modificar parlamentario\n");
+        printf("0. Volver al menu principal\n");
+        printf("\nSeleccione una opcion: ");
+        opcion = leerEntero();
+
+        switch (opcion)
+        {
+            case 1:
+                printf("\nIngrese el ID del parlamentario (entero positivo y unico): ");
+                id = leerEntero();
+
+                if (buscarParlamentarioPorID(sistemaGlobal.parlamentario, id) != NULL)
+                {
+                    printf("El ID ingresado ya existe. Intente con un ID unico.\n");
+                    break;
+                }
+
+                printf("Ingrese el nombre del parlamentario: ");
+                leerString(nombre, sizeof(nombre));
+
+                printf("Ingrese el partido del parlamentario: ");
+                leerString(partidoPolitico, sizeof(partidoPolitico));
+
+                printf("Ingrese la distrito del parlamentario: ");
+                leerString(distrito, sizeof(distrito));
+
+                printf("Ingrese la edad del parlamentario: ");
+                edad = leerEntero();
+
+                while(edad < 21)
+                {
+                    printf("Edad invalidad por favor ingresar una edad superior a 21: ");
+                    edad = leerEntero();
+                }
+
+                printf("Ingrese el cargo del Parlamentario 1.Diputado 2.Senador: ");
+                cargo = leerEntero();
+
+                while(cargo != 1 && cargo != 2)
+                {
+                    printf("Valor digitado invalido, asegurese de ingresar un valor valido 1.Diputados 2.Senadores: ");
+                    cargo = leerEntero();
+                }
+                nuevoParlamentario = crearParlamentario(id, nombre,partidoPolitico, distrito, edad, cargo);
+                agregarNodoParlamentario(nuevoParlamentario);
+
+                printf("Parlamentario agregado correctamente.\n");
+                break;
+
+            case 2:
+                listarParlamentarios(sistemaGlobal.parlamentario);
+                break;
+
+            case 3:
+                printf("\nIngrese el ID del parlamentario a eliminar: ");
+                idParlamentario = leerEntero();
+                sistemaGlobal.parlamentario = eliminarNodoParlamentario(sistemaGlobal.parlamentario, idParlamentario);
+                break;
+
+            case 4:
+                printf("\nIngrese el ID del parlamentario a buscar: ");
+                idParlamentario = leerEntero();
+                parlamentario = buscarParlamentarioPorID(sistemaGlobal.parlamentario, idParlamentario);
+
+                if (parlamentario != NULL)
+                {
+                    printf("Parlamentario encontrado:\nID: %d\nNombre: %s\nPartido: %s\nRegion: %s\nEdad: %d\nCargo: %s\n",
+                           parlamentario->id, parlamentario->nombre, parlamentario->partidoPolitico, parlamentario->distrito, parlamentario->edad,
+                           parlamentario->cargo == 1 ? "Diputado" : (parlamentario->cargo == 2 ? "Senador" : "Desconocido"));
+                }
+                else
+                {
+                    printf("Parlamentario no encontrado.\n");
+                }
+                break;
+
+            case 5:
+            {
+
+                printf("\nIngrese el ID del parlamentario a modificar: ");
+                id = leerEntero();
+
+                parlamentario = buscarParlamentarioPorID(sistemaGlobal.parlamentario, id);
+
+                if (parlamentario == NULL)
+                {
+                    printf("Parlamentario no encontrado.\n");
+                    break;
+                }
+
+                printf("Ingrese el nuevo nombre del parlamentario: ");
+                leerString(nuevoNombre, sizeof(nuevoNombre));
+
+                printf("Ingrese el nuevo partido del parlamentario: ");
+                leerString(nuevoPartido, sizeof(nuevoPartido));
+
+                printf("Ingrese el nuevo distrito del parlamentario: ");
+                leerString(nuevoDistrito, sizeof(nuevoDistrito));
+
+                printf("Ingrese la nueva edad del parlamentario: ");
+                nuevaEdad = leerEntero();
+
+                printf("Ingrese el nuevo cargo del parlamentario (1.Diputado 2.Senador): ");
+                nuevoCargo = leerEntero();
+
+
+                modificarParlamentario(parlamentario, nuevoNombre, nuevoPartido, nuevoDistrito, nuevaEdad, nuevoCargo);
+                break;
+            }
+
+            case 0:
+                printf("\nVolviendo al Menu Principal...\n");
+                break;
+
+            default:
+                printf("\nOpcion no valida. Intente de nuevo.\n");
+        }
+
+    } while (opcion != 0);
+}
+
+void menuComisiones()
+{
+    int opcion;
+    int id, parlamentarioId, numParlamentarios;
+    char nombre[80], descripcion[200];
+    struct Comision *nuevaComision;
+    struct Comision *comision;
+    struct Parlamentario *parlamentario = NULL;
+
+    do
+    {
+        printf("\n--- Menu Comisiones ---\n");
+        printf("1. Agregar comision\n");
+        printf("2. Modificar comision\n");
+        printf("3. Listar Comisiones\n");
+        printf("4. Eliminar comision\n");
+        printf("5. Buscar comision por ID\n");
+        printf("0. Volver al menu principal\n");
+        printf("\nSeleccione una opcion: ");
+        opcion = leerEntero();
+
+        switch (opcion)
+        {
+            case 1:
+                printf("\nIngrese el ID de la comision (entero positivo y unico): ");
+                id = leerEntero();
+
+                if (buscarComisionPorID(sistemaGlobal.comisiones, id) != NULL)
+                {
+                    printf("El ID ingresado ya existe. Intente con un ID unico.\n");
+                    break;
+                }
+                printf("Ingrese el nombre de la comision: ");
+                leerString(nombre, sizeof(nombre));
+
+                printf("Ingrese la descripcion de la comision: ");
+                leerString(descripcion, sizeof(descripcion));
+
+                nuevaComision = crearComision(id, nombre, descripcion);
+                agregarNodoComision(nuevaComision);
+
+                printf("comision agregada correctamente.\n");
+                break;
+
+            case 2:
+                printf("\nIngrese el ID de la comision a modificar: ");
+                id = leerEntero();
+
+                comision = buscarComisionPorID(sistemaGlobal.comisiones, id);
+
+                if (comision == NULL)
+                {
+                    printf("No se encontro una comision con el ID especificado.\n");
+                    break;
+                }
+
+                printf("Ingrese el nuevo nombre de la comision: ");
+                leerString(nombre, sizeof(nombre));
+
+                printf("Ingrese la nueva descripcion de la comision: ");
+                leerString(descripcion, sizeof(descripcion));
+
+                modificarComision(comision, nombre, descripcion);
+                break;
+
+            case 3:
+                listarComisiones(sistemaGlobal.comisiones);
+                break;
+
+            case 4:
+                printf("\nIngrese el ID de la comision a eliminar: ");
+                id = leerEntero();
+
+                sistemaGlobal.comisiones = eliminarNodoComision(sistemaGlobal.comisiones, id);
+                break;
+
+            case 5:
+                printf("\nIngrese el ID de la comision a buscar: ");
+                id = leerEntero();
+                comision = buscarComisionPorID(sistemaGlobal.comisiones, id);
+
+                if (comision != NULL)
+                {
+                    printf("comision encontrada:\nID: %d\nNombre: %s\nDescripcion: %s\n",
+                           comision->id, comision->nombre, comision->descripcion);
+                }
+                else
+                {
+                    printf("Comision no encontrada.\n");
+                }
+                break;
+
+            case 6: // Agregar parlamentario a comisión
+
+                printf("Seleccione la comision (ID): ");
+                id = leerEntero();
+                comision = buscarComisionPorID(sistemaGlobal.comisiones, id);
+
+                if (comision == NULL)
+                {
+                    printf("Comision no encontrada.\n");
+                    break;
+                }
+
+                printf("\nSeleccione el parlamentario (ID): ");
+                parlamentarioId = leerEntero();
+                parlamentario = buscarParlamentarioPorID(sistemaGlobal.parlamentario, parlamentarioId);
+
+                if (parlamentario == NULL)
+                {
+                    printf("\nParlamentario no encontrado.\n");
+                    break;
+                }
+
+                agregarParlamentarioAComision(comision, parlamentario);
+                break;
+
+            case 0:
+                printf("\nVolviendo al menu principal...\n");
+                break;
+
+            default:
+                printf("\nOpcion no valida. Intente de nuevo.\n");
+
+
+        }
+
+    }while (opcion != 0);
+}
+
+
+void menuProyectos()
+{
+    int opcion;
+    int idProyecto;
+    int id, urgencia, origen;
+    int idModificacion, aprobado;
+    char descripcion[200];
+    char titulo[100], nombre[100], rut[20];
+    struct Proyecto *proyecto;
+    struct Proyecto *nuevoProyecto;
+
+    do
+    {
+        printf("\n--- Menu Proyectos de Ley ---\n");
+        printf("1. Crear nuevo proyecto de ley\n");
+        printf("2. Registrar modificacion en proyecto\n");
+        printf("3. Listar todos los proyectos\n");
+        printf("4. Eliminar proyecto de ley\n");
+        printf("5. Buscar proyecto por ID\n");
+        printf("0. Volver al menu principal\n");
+        printf("\nSeleccione una opcion: ");
+        opcion = leerEntero();
+
+        switch (opcion)
+        {
+            case 1:
+                printf("\nIngrese el ID del proyecto (entero positivo y unico): ");
+                id = leerEntero();
+
+                if (buscarProyectoPorID(sistemaGlobal.proyectos, id) != NULL)
+                {
+                    printf("El ID ingresado ya existe. Intente con un ID unico.\n");
+                    break;
+                }
+
+                printf("Ingrese el titulo del proyecto: ");
+                leerString(titulo, sizeof(titulo));
+
+                printf("Ingrese el nivel de urgencia. Debe ser un numero entre 1 y 3: ");
+                urgencia = leerEntero();
+
+                while (urgencia < 1 || urgencia > 3)
+                {
+
+                    printf("Nivel de urgencia no valido. Debe ser un numero entre 1 y 3.\n");
+                    printf("Ingrese el nivel de urgencia nuevamente: ");
+                    urgencia = leerEntero();
+                }
+
+                do
+                {
+                    printf("Ingrese el origen del proyecto (1 = Presidencial, 2 = Diputado, 3 = Senadores): ");
+                    origen = leerEntero();
+
+                    if (origen < 1 || origen > 3)
+                    {
+                        printf("Origen no valido. Debe ser un numero entre 1 y 4.\n");
+                    }
+
+                } while (origen < 1 || origen > 3);
+
+
+                nuevoProyecto = crearProyecto(id, titulo, urgencia, origen);
+                agregarNodoProyecto(nuevoProyecto);
+                printf("Proyecto agregado correctamente.\n");
+                break;
+
+
+            case 2:
+                printf("\nIngrese el ID del proyecto a modificar: ");
+                idProyecto = leerEntero();
+                proyecto = buscarProyectoPorID(sistemaGlobal.proyectos, idProyecto);
+
+                if (proyecto == NULL)
+                {
+                    printf("No se encontro un proyecto con el ID especificado.\n");
+                    break;
+                }
+
+                printf("Ingrese el ID de la modificacion: ");
+                idModificacion = leerEntero();
+
+                printf("Ingrese la descripcion de la modificacion: ");
+                leerString(descripcion, sizeof(descripcion));
+
+                printf("¿La modificacion esta aprobada? (1: SI, 0: NO): ");
+                aprobado = leerEntero();
+
+                while (aprobado != 0 && aprobado != 1)
+                {
+                    printf("Ingrese un valor de aprobacion valida (1: SI, 0: NO): ");
+                    aprobado = leerEntero();
+                }
+
+                modificarProyecto(proyecto, idModificacion, descripcion, aprobado);
+                printf("Modificacion registrada en el proyecto.\n");
+                break;
+
+            case 3:
+                listarProyectos(sistemaGlobal.proyectos);
+                break;
+
+            case 4:
+                printf("\nIngrese el ID del proyecto a eliminar: ");
+                idProyecto = leerEntero();
+                sistemaGlobal.proyectos = eliminarNodoProyecto(sistemaGlobal.proyectos, idProyecto);
+                break;
+
+
+            case 5:
+                printf("\nIngrese el ID del proyecto a buscar: ");
+                idProyecto = leerEntero();
+                proyecto = buscarProyectoPorID(sistemaGlobal.proyectos, idProyecto);
+
+                if(proyecto == NULL)
+                {
+                    printf("Proyecto no encontrado.\n");
+                }
+                break;
+
+            case 0:
+                printf("\nVolviendo al Menu Principal...\n");
+                break;
+
+            default:
+                printf("\nOpcion no valida. Intente de nuevo.\n");
+        }
+    }while (opcion != 0);
+}
+
+//MENU PROCESO LEGISLATIVO
+
+void menuProcesoLegislativo(struct SistemaLegislativo *sistema)
+{
+    int opcion;
+    int idParlamentario, voto, idLey;
+    struct Proyecto *proyecto = NULL;
+    struct Ley *leyEncontrada = NULL;
+
+    proyecto = sistema->proyectos->proyecto;
+
+    do
+    {
+
+        printf("\n---- Menu del Proceso Legislativo ----\n");
+        printf("1. Mostrar origen del proyecto\n");
+        printf("2. Verificar iniciativa\n");
+        printf("3. Votos proceso legislativo\n");
+        printf("4. Mostrar Leyes aprobadas\n");
+        printf("5. Buscar Leyes aprobadas por ID\n");
+        printf("0. Salir\n");
+        printf("Seleccione una opcion: ");
+        scanf("%d", &opcion);
+
+        switch (opcion)
+        {
+            case 1:
+                mostrarOrigenProyecto(proyecto);
+                break;
+            case 2:
+                verificarIniciativa(proyecto);
+                break;
+            case 3:
+            {
+                do
+                {
+                    printf("Ingrese el ID del parlamentario: ");
+                    idParlamentario = leerEntero();
+
+                    if (haVotado(sistema->proyectos->proyecto, idParlamentario))
+                    {
+                        printf("El parlamentario con ID %d ya ha votado en este proyecto. Intente nuevamente.\n", idParlamentario);
+                    }
+                } while (haVotado(sistema->proyectos->proyecto, idParlamentario));
+
+                printf("Ingrese el voto (2: A Favor, 1: En Contra, 0: Abstencion): ");
+                voto = leerEntero();
+                votarProyecto(sistema->proyectos->proyecto, sistema->parlamentario, idParlamentario, voto);
+                verificarQuorum(sistema->proyectos->proyecto);
+                break;
+            }
+
+            case 4:
+                printf("\n-- Leyes Promulgadas --\n");
+                mostrarLeyesAprobadas(sistemaGlobal.leyes);
+                break;
+            case 5:
+            {
+                while (leyEncontrada == NULL)
+                {
+                    printf("\nIngrese el ID de la ley a buscar: ");
+                    idLey = leerEntero();
+
+                    leyEncontrada = buscarLey(sistemaGlobal.leyes, idLey);
+
+                    if (leyEncontrada != NULL)
+                    {
+                        printf("Ley encontrada\n");
+                        printf("ID: %d\n", leyEncontrada->id);
+                        printf("Titulo: %s\n", leyEncontrada->titulo);
+                    }
+                    else
+                    {
+                        printf("Ley con ID %d no encontrada. Intente de nuevo.\n", idLey);
+                    }
+                }
+                break;
+            }
+
+            case 0:
+                printf("Saliendo del menu...\n");
+                break;
+
+            default:
+                printf("Opcion no valida. Intente de nuevo.\n");
+                break;
+        }
+    } while (opcion != 0);
+}
+
+void menuIniciativas(struct SistemaLegislativo *sistema)
+{
+    int opcion;
+    int idProyecto;
+    char nombre[100], rut[20];
+    int votosNecesarios = 3;
+
+    do
+    {
+        printf("\n--- Menu Proyectos de Ley ---\n");
+        printf("1. Crear nueva iniciativa ciudadana\n");
+        printf("2. Firmar una iniciativa\n");
+        printf("3. Verificar firmas y convertir a proyecto\n");
+        printf("0. Volver al menu principal\n");
+        printf("\nSeleccione una opcion: ");
+        opcion = leerEntero();
+
+        switch (opcion)
+        {
+            case 1:
+                idProyecto = generarIdUnicoIniciativa(sistema);
+                crearIniciativaCiudadana((struct NodoIniciativa **) &sistema->iniciativas, idProyecto);
+                break;
+
+            case 2:
+                printf("Ingrese ID de la iniciativa a firmar: ");
+                idProyecto = leerEntero();
+                printf("Ingrese nombre del ciudadano: ");
+                leerString(nombre, sizeof(nombre));
+                printf("Ingrese RUT del ciudadano: ");
+                leerString(rut, sizeof(rut));
+                firmarIniciativa((struct NodoIniciativa *) sistema->iniciativas, idProyecto, nombre, rut);
+                break;
+
+            case 3:
+                verificarYConvertirIniciativas((struct NodoIniciativa *) sistema->iniciativas, votosNecesarios);
+                break;
+
+            case 0:
+                printf("\nVolviendo al Menu Principal...\n");
+                break;
+
+            default:
+                printf("\nOpcion no valida. Intente de nuevo.\n");
+        }
+
+    } while (opcion != 0);
+}
+
+void menu(struct SistemaLegislativo *sistema)
+{
+    int opcion;
+    do
+    {
+        printf("\n--- Proyecto de Ley ---\n");
+        printf("1. Parlamentarios\n");
+        printf("2. Comision\n");
+        printf("3. Proyectos de Ley\n");
+        printf("4. Proceso Legislativo\n");
+        printf("5. Iniciativas Ciudadanas\n");
+        printf("0. Salir\n");
+        printf("\nSeleccione una opcion: ");
+        opcion = leerEntero();
+
+        switch (opcion)
+        {
+            case 1:
+                menuParlamentarios(sistema);
+                break;
+
+            case 2:
+                menuComisiones(sistema);
+                break;
+
+            case 3:
+                menuProyectos(sistema);
+                break;
+
+            case 4:
+                menuProcesoLegislativo(sistema);
+                break;
+
+            case 5:
+                menuIniciativas(sistema);
+                break;
+
+            case 0:
+                printf("\nSaliendo del programa...\n");
+                break;
+
+            default:
+                printf("\nOpcion invalida. Intente de nuevo.\n");
+
+        }
+    } while (opcion != 0);
+}
+
+void liberarMemoriaSistema(struct SistemaLegislativo *sistema)
+{
+    if (sistema == NULL)
+        return;
+
+    free(sistema->parlamentario);
+    free(sistema->proyectos);
+    free(sistema->camaras);
+    free(sistema->comisiones);
+    free(sistema->leyes);
+    free(sistema->iniciativas);
+
+    free(sistema);
+}
+
+int main()
+{
+    inicializarSistema();
+    menu(&sistemaGlobal);
+
+    // Liberar memoria al final del programa
+    liberarMemoriaSistema(&sistemaGlobal);
+
+    return 0;
+}
